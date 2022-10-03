@@ -1,0 +1,152 @@
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Typography,
+  Grid,
+  Link,
+  Divider,
+} from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import { useForm } from 'react-hook-form';
+import * as yup from 'yup';
+import { yupResolver } from '@hookform/resolvers/yup';
+import { FormProvider, RHFTextField, RHFSelect } from '../../../../components/hook-form';
+import useStyles from '../../../DialogStyles';
+import { addBrokerFee } from '../../../../services/brokerService';
+import { getAllPairInstrument } from '../../../../services/coinService';
+import useAuth from '../../../../hooks/useAuth';
+
+const validationSchema = yup.object({
+  makerFee: yup.string('Enter maker fee').required('Maker fee is required'),
+  takerFee: yup.string('Enter taker fee').required('Taker fee is required'),
+  instrument: yup.string('Select instrument').required('Instrument is required'),
+});
+
+const instrumentList = ['BTC/INR'];
+export default function AddCoinPair(props) {
+  const { isOpen, setOpen, setError, setLoading, setAlertMsg, setSuccess, fetchBrokerFees } = props;
+  const classes = useStyles();
+  const { logout } = useAuth();
+  const { brokerId } = useParams();
+  const [coinPair, setCoinPair] = useState([]);
+
+  const initialValues = {
+    makerFee: '',
+    takerFee: '',
+    instrument: '',
+  };
+
+  const methods = useForm({
+    mode: 'onChange',
+    resolver: yupResolver(validationSchema),
+    defaultValues: initialValues,
+  });
+
+  const { reset, handleSubmit } = methods;
+
+  const handlePopupClose = () => {
+    setOpen(false);
+    reset();
+  };
+
+  const onSubmit = async (data) => {
+    setLoading(true);
+    const payload = {
+      brokerId,
+      instrument: data?.instrument,
+      makerFee: data?.makerFee,
+      takerFee: data?.takerFee,
+    };
+    const res = await addBrokerFee(payload);
+    if (res.status === 200) {
+      setSuccess(true);
+      setAlertMsg(res?.data?.message || 'Added successfully');
+      setLoading(false);
+      handlePopupClose();
+      fetchBrokerFees();
+    }
+    if (res.code === 'ERR_BAD_REQUEST') {
+      setError(true);
+      setAlertMsg(res?.response?.data?.message || res?.response?.data || 'Something went wrong');
+      setLoading(false);
+      if (res.response.status === 401) {
+        await logout();
+        window.location.reload(false);
+      }
+    }
+    if (res.code === 'ERR_NETWORK') {
+      setError(true);
+      setAlertMsg('Something went wrong');
+      setLoading(false);
+    }
+    setLoading(false);
+  };
+
+  const featchCoinPairs = async () => {
+    const res = await getAllPairInstrument();
+    const pairData = [];
+    if (res.status === 200) {
+      const pairInstruments = res.data.data.instruments;
+      let i;
+      for (i = 0; i < pairInstruments.length; i += 1) {
+        pairData.push(res.data.data.instruments[i].instrument);
+      }
+      setCoinPair(pairData);
+    }
+  };
+
+  useEffect(() => {
+    featchCoinPairs();
+  }, []);
+
+  return (
+    <div>
+      <Dialog open={isOpen} onClose={handlePopupClose} classes={{ paper: classes.dialog }}>
+        <DialogTitle className={classes.dialogTitle}>
+          <div className={classes.dialogTitleChild}>
+            <Typography>Add Coin Pair</Typography>
+            <Link to="#" onClick={handlePopupClose}>
+              <CloseIcon className={classes.closeIcon} />
+            </Link>
+          </div>
+        </DialogTitle>
+        <FormProvider methods={methods} onSubmit={handleSubmit(onSubmit)}>
+          <DialogContent>
+            <Grid container>
+              <Grid item xs={12} style={{ marginTop: 15 }}>
+                <RHFSelect name="instrument" label="">
+                  <option value="">Select Coin Pair</option>
+                  {coinPair?.map((item, index) => (
+                    <option key={index} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </RHFSelect>
+              </Grid>
+              <Grid item xs={12} style={{ marginTop: 15 }}>
+                <RHFTextField name="makerFee" placeholder="Maker Fee %" label="Maker Fee %" type="number" />
+              </Grid>
+              <Grid item xs={12} style={{ marginTop: 15 }}>
+                <RHFTextField name="takerFee" placeholder="Taker Fee %" label="Taker Fee %" type="number" />
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <Divider style={{ marginTop: 15 }} />
+          <DialogActions className={classes.dialogAction}>
+            <Button variant="outlined" color="primary" className={classes.buttonCancel} onClick={handlePopupClose}>
+              Cancel
+            </Button>
+            <Button variant="contained" type="submit" className={classes.buttonSubmit}>
+              Add
+            </Button>
+          </DialogActions>
+        </FormProvider>
+      </Dialog>
+    </div>
+  );
+}
